@@ -1,30 +1,50 @@
 # disk-band
 
-Claude 입력창 위에 내 컴퓨터 상태를 보여주는 작은 띠입니다. · A small status band above the Claude prompt.
+> **클로드 모드 상태 표시줄** — Claude 입력창 위에 내 맥의 디스크·메모리·CPU·인터넷·세션 상태를 항상 보여줍니다.
+> A status bar mod for Claude: your Mac's disk, memory, CPU, network and sessions, right above the prompt.
+
+![platform](https://img.shields.io/badge/platform-macOS-lightgrey)
+![license](https://img.shields.io/badge/license-MIT-blue)
+![claude mod](https://img.shields.io/badge/Claude-mod-orange)
 
 ```
 ⛁ 디스크 █████ 87% · 123GB 남음     ▦ 메모리 ███░░ 64% · 41.2/64GB     ⚙ CPU ██░░░ 38%
 ● 인터넷 12ms ↓1.2MB/s ↑85KB/s [▴]     ◈ 로컬 세션 28개     ⬡ 로컬 서버 6개 [▾]     [한→EN] [About]
 ```
 
-## 보여주는 것
+작업하다가 "디스크가 꽉 찼나?", "지금 렌더링 때문에 느린가?", "개발 서버 몇 개 켜뒀지?"가 궁금할 때 터미널을 따로 열 필요가 없습니다.
 
-| 항목 | 내용 |
+## 목차
+
+- [주요 기능](#주요-기능)
+- [빠른 시작](#빠른-시작)
+- [사용법](#사용법)
+- [설정 바꾸기](#설정-바꾸기)
+- [동작 방식](#동작-방식)
+- [요구 사항](#요구-사항)
+- [자주 묻는 질문](#자주-묻는-질문)
+- [English](#english)
+- [라이선스](#라이선스)
+
+## 주요 기능
+
+| 항목 | 보여주는 것 |
 | --- | --- |
-| 디스크 | 사용률 막대와 남은 용량. 50GB 미만이면 노랑, 20GB 미만이면 빨강 |
-| 메모리 | 사용률 막대, 퍼센트, 사용량/전체 GB |
-| CPU | 사용률 막대와 퍼센트 |
-| 인터넷 | 연결 여부(●), 응답 시간, 다운로드/업로드 속도. `▴`/`▾` 버튼으로 속도 숨김·표시 |
-| 로컬 세션 | 이 컴퓨터에서 도는 `claude` 프로세스 수 |
-| 로컬 서버 | node·bun·python 등 개발용 프로그램이 열어 둔 포트 수. `▾` 버튼으로 포트 번호 펼침 |
-| 한→EN | 한국어/영어 전환 (선택은 저장됨) |
-| About | AI 싱크클럽 소개 링크 표시 |
+| ⛁ 디스크 | 사용률 막대와 남은 용량. 50GB 미만 노랑, 20GB 미만 빨강 |
+| ▦ 메모리 | 사용률 막대, 퍼센트, 사용량/전체 GB |
+| ⚙ CPU | 사용률 막대와 퍼센트 |
+| ● 인터넷 | 연결 여부, 응답 시간, 다운로드/업로드 속도 |
+| ◈ 로컬 세션 | 이 컴퓨터에서 도는 `claude` 프로세스 수 |
+| ⬡ 로컬 서버 | node·bun·python 등 개발용 프로그램이 열어 둔 포트 수 |
 
-막대는 75% 이상이면 노랑, 90% 이상이면 빨강으로 바뀝니다. 15초마다 새로 읽습니다.
+- 막대는 75% 이상이면 노랑, 90% 이상이면 빨강으로 바뀝니다.
+- 한국어/영어 전환 버튼이 있고, 고른 언어는 저장됩니다.
+- 15초마다 새로 읽고, 읽는 동안에도 입력창은 멈추지 않습니다.
+- 설치 후 설정할 것이 없습니다.
 
-## 설치
+## 빠른 시작
 
-Claude Code 터미널 세션에서:
+Claude Code 터미널 세션에서 한 줄:
 
 ```
 /plugin install disk-band --marketplace aisyncclub/claude-disk-band
@@ -32,13 +52,13 @@ Claude Code 터미널 세션에서:
 
 `Add marketplace?`에 `y`를 누르고 범위를 고르면 끝입니다. 이후 시작하는 세션부터 띠가 뜹니다.
 
-### 데스크톱 앱 / 직접 폴더로 쓰기
+### 데스크톱 앱에서 쓰기 / 폴더로 직접 쓰기
 
 ```bash
 git clone https://github.com/aisyncclub/claude-disk-band.git ~/.claude/mods/disk-band
 ```
 
-그다음 `~/.claude/settings.json`의 `env`에 폴더를 적습니다.
+`~/.claude/settings.json`의 `env`에 그 폴더를 적으면 새 세션마다 자동으로 로드됩니다.
 
 ```json
 {
@@ -48,44 +68,75 @@ git clone https://github.com/aisyncclub/claude-disk-band.git ~/.claude/mods/disk
 }
 ```
 
-터미널에서 한 번만 써 보려면 `claude --plugin-dir ~/.claude/mods/disk-band`.
+터미널에서 한 번만 써 보려면: `claude --plugin-dir ~/.claude/mods/disk-band`
 
 ## 사용법
 
-- 띠 안의 `[한→EN]`을 누르면 글자가 영어로 바뀝니다. 다시 누르면 한국어입니다.
-- 인터넷 옆 `▴`를 누르면 속도가 숨고, `▾`를 누르면 다시 보입니다.
-- 로컬 서버 옆 `▾`를 누르면 열린 포트 번호가 아래 줄에 펼쳐집니다.
-- `[About]`을 누르면 AI 싱크클럽 소개 링크가 나옵니다.
+띠 안의 버튼을 누르면 됩니다.
 
-## 요구 사항과 알아둘 점
+| 버튼 | 하는 일 |
+| --- | --- |
+| `[한→EN]` / `[EN→한]` | 글자를 영어/한국어로 바꿉니다 |
+| 인터넷 옆 `▴` / `▾` | 다운로드·업로드 속도를 숨기거나 보입니다 |
+| 로컬 서버 옆 `▾` / `▴` | 열린 포트 번호를 아래 줄에 펼치거나 접습니다 |
+| `[About]` | AI 싱크클럽 소개 링크를 보입니다 |
 
-- **macOS 전용**입니다. `df`, `vm_stat`, `top`, `netstat`, `route`, `lsof`, `ping`을 씁니다.
-- 인터넷 상태는 `1.1.1.1`에 핑을 한 번 보내 확인합니다. 속도는 속도 측정이 아니라, 지금 쓰는 네트워크 장치가 15초 동안 실제로 주고받은 양입니다.
-- 메모리는 활성 + 고정 + 압축된 메모리를 합친 값이라 활동 상태 보기와 몇 GB 다를 수 있습니다.
-- 로컬 세션 수에는 열려만 있고 대화하지 않는 세션도 포함됩니다.
-- 터미널은 글자 크기를 바꿀 수 없습니다. 크기는 터미널 설정의 폰트 크기로 조절하세요.
+## 설정 바꾸기
 
-## 고치기
+모양과 문구는 모두 [`hooks/register.tsx`](hooks/register.tsx) 한 파일에 있습니다.
 
-모양과 문구는 [`hooks/register.tsx`](hooks/register.tsx)에 있습니다.
+| 바꾸고 싶은 것 | 찾을 곳 |
+| --- | --- |
+| 갱신 주기 | `REFRESH_MS` (기본 15초) |
+| 막대 칸 수 | `BAR` (기본 5칸) |
+| 색 기준 | `color()`, `diskColor` |
+| 한/영 문구 | `TEXT` |
+| 개발 서버로 볼 프로그램 | `DEV` |
 
-- 갱신 주기: `REFRESH_MS`
-- 막대 칸 수: `BAR`
-- 색 기준: `color()`, `diskColor`
-- 문구(한/영): `TEXT`
+고친 뒤에는 `claude plugin validate <폴더>`로 확인하세요.
 
-고친 뒤 `claude plugin validate <폴더>`로 확인하세요.
+## 동작 방식
+
+Claude의 모드(플러그인) 기능으로 입력창 위 자리(`AbovePrompt`)에 띠를 그립니다. 15초마다 macOS 기본 명령으로 값을 읽습니다.
+
+| 값 | 읽는 방법 |
+| --- | --- |
+| 디스크 | `df` |
+| 메모리 | `vm_stat`, `sysctl hw.memsize` |
+| CPU | `top` |
+| 인터넷 | `ping 1.1.1.1`, `netstat -ib` (15초 동안 주고받은 양) |
+| 세션 | `ps` |
+| 서버 | `lsof` |
+
+외부 서버로 보내는 데이터는 없습니다. 인터넷 상태 확인용 핑 한 번만 `1.1.1.1`로 나갑니다.
+
+## 요구 사항
+
+- macOS
+- 모드를 지원하는 Claude Code (터미널 또는 데스크톱 앱)
+
+## 자주 묻는 질문
+
+**리눅스나 윈도우에서도 되나요?** 아직 아닙니다. macOS 명령에 맞춰져 있습니다.
+
+**속도가 속도 테스트 결과와 달라요.** 속도 측정이 아니라, 지금 쓰는 네트워크 장치가 15초 동안 실제로 주고받은 양입니다. 아무것도 안 하면 0에 가깝게 나옵니다.
+
+**메모리가 활동 상태 보기와 달라요.** 활성 + 고정 + 압축된 메모리를 합친 값이라 몇 GB 차이가 날 수 있습니다.
+
+**로컬 세션 수가 생각보다 많아요.** 대화 중이 아니라 열려만 있는 세션도 셉니다.
+
+**글자 크기를 줄일 수 있나요?** 터미널은 글자 크기를 바꿀 수 없습니다. 터미널 설정의 폰트 크기로 조절하세요.
 
 ## English
 
-A status band above the Claude Code prompt for macOS: disk, memory, CPU, internet (latency and live up/down throughput), number of local `claude` sessions and local dev servers. A button toggles Korean/English; others hide the speed, expand the port list, or show the AI Sync Club link.
+A status bar mod for Claude Code on macOS. It draws one small band above the prompt: disk, memory, CPU, internet (latency and live up/down throughput), the number of local `claude` sessions and local dev servers.
 
 ```
 /plugin install disk-band --marketplace aisyncclub/claude-disk-band
 ```
 
-Or clone the repo to `~/.claude/mods/disk-band` and set `CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json` to that path. macOS only.
+Buttons in the band switch Korean/English, hide the speed, expand the port list and show an About link. Or clone the repo to `~/.claude/mods/disk-band` and set `CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json` to that path. Everything is in `hooks/register.tsx`.
 
-## 만든 곳 · About
+## 라이선스
 
-[AI 싱크클럽](https://aisyncclub.com/about) · MIT License
+MIT. 만든 곳: [AI 싱크클럽](https://aisyncclub.com/about)
