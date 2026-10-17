@@ -1,21 +1,34 @@
-export type Stats = {
-  freeGB: number
-  totalGB: number
-  diskPct: number
-  memUsedGB: number
-  memTotalGB: number
-  memPct: number
-  cpuPct: number
-  sessions: number
-  ports: number[]
-  isOnline: boolean
+export type Disk = { freeGB: number; totalGB: number; pct: number }
+export type Mem = { usedGB: number; totalGB: number; pct: number }
+export type Bytes = { rx: number; tx: number }
+
+// One reading as the platform reader returns it; a part it could not read is null.
+export type Raw = {
+  disk: Disk | null
+  mem: Mem | null
+  cpuPct: number | null
+  sessions: number | null
+  ports: number[] | null
+  isOnline: boolean | null
   pingMs: number
-  downBps: number
-  upBps: number
+  bytes: Bytes | null
+}
+
+// What the band draws; null shows as "unknown" in that cell only.
+export type Stats = {
+  disk: Disk | null
+  mem: Mem | null
+  cpuPct: number | null
+  sessions: number | null
+  ports: number[] | null
+  isOnline: boolean | null
+  pingMs: number
+  downBps: number | null
+  upBps: number | null
 }
 
 declare module 'claude-code' {
   interface PluginState {
-    'disk-band': { stats: Stats | null }
+    'disk-band': { reading: Stats | null }
   }
 }

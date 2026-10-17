@@ -1,9 +1,10 @@
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-import type { Stats } from '../types'
+import type { Bytes, Disk, Mem, Raw, Stats } from '../types'
 
-const stats = atom({ plugin: 'disk-band', key: 'stats' } as const, null)
+// 'reading', not the 0.3 'stats': a value of the old shape left in the session is never read
+const stats = atom({ plugin: 'disk-band', key: 'reading' } as const, null)
 
 const REFRESH_MS = 15_000
 const BAR = 5
@@ -24,33 +25,37 @@ const TEXT = {
   net: { ko: '인터넷', en: 'Internet' },
   online: { ko: '연결됨', en: 'Online' },
   offline: { ko: '끊김', en: 'Offline' },
+  unknown: { ko: '알 수 없음', en: 'unknown' },
 } as const
 
-const parseDisk = (out: string) => {
-  const cols = out.trim().split('\n')[1]?.trim().split(/\s+/)
+export const parseDisk = (out: string | null): Disk | null => {
+  const cols = out?.trim().split('\n')[1]?.trim().split(/\s+/)
   if (!cols || cols.length < 4) return null
   const total = Number(cols[1])
   const free = Number(cols[3])
   if (!total || Number.isNaN(free)) return null
-  return { freeGB: free / 1024 / 1024, totalGB: total / 1024 / 1024, diskPct: Math.round((1 - free / total) * 100) }
+  return { freeGB: free / 1024 / 1024, totalGB: total / 1024 / 1024, pct: Math.round((1 - free / total) * 100) }
 }
 
-const parseMem = (vm: string, total: number) => {
+export const parseMem = (vm: string | null, total: number): Mem | null => {
+  if (!vm || !total) return null
   const page = Number(/page size of (\d+) bytes/.exec(vm)?.[1] ?? 16384)
   const pages = (label: string) => Number(new RegExp(`${label}:\\s+(\\d+)`).exec(vm)?.[1] ?? 0)
   const used = (pages('Pages active') + pages('Pages wired down') + pages('Pages occupied by compressor')) * page
-  return { memUsedGB: used / GB, memTotalGB: total / GB, memPct: Math.round((used / total) * 100) }
+  return { usedGB: used / GB, totalGB: total / GB, pct: Math.round((used / total) * 100) }
 }
 
-const parseCpu = (top: string) => {
-  const lines = top.split('\n').filter(l => l.startsWith('CPU usage'))
+export const parseCpu = (top: string | null) => {
+  const lines = (top ?? '').split('\n').filter(l => l.startsWith('CPU usage'))
   const idle = Number(/([\d.]+)% idle/.exec(lines[lines.length - 1] ?? '')?.[1])
-  return Number.isNaN(idle) ? 0 : Math.round(100 - idle)
+  return Number.isNaN(idle) ? null : Math.round(100 - idle)
 }
 
-const parseSessions = (ps: string) => ps.split('\n').filter(l => l.trim().split('/').pop() === 'claude').length
+export const parseSessions = (ps: string | null) =>
+  ps === null ? null : ps.split('\n').filter(l => l.trim().split('/').pop() === 'claude').length
 
-const parsePorts = (lsof: string) => {
+export const parsePorts = (lsof: string | null) => {
+  if (lsof === null) return null
   const ports = new Set<number>()
   for (const line of lsof.split('\n').slice(1)) {
     const cols = line.trim().split(/\s+/)
@@ -64,57 +69,130 @@ const parsePorts = (lsof: string) => {
 const rate = (bps: number) =>
   bps >= 1024 * 1024 ? `${(bps / 1024 / 1024).toFixed(1)}MB/s` : `${Math.round(bps / 1024)}KB/s`
 
-const parseBytes = (out: string) => {
-  const line = out.split('\n').find(l => l.includes('<Link#'))
+export const parseBytes = (out: string | null): Bytes | null => {
+  const line = out?.split('\n').find(l => l.includes('<Link#'))
   const cols = line?.trim().split(/\s+/)
   if (!cols || cols.length < 10) return null
   return { rx: Number(cols[cols.length - 5]), tx: Number(cols[cols.length - 2]) }
+}
+
+// What the PowerShell script prints (scripts/stats-windows.ps1); each part may be null.
+export const parseWindows = (out: string | null): Raw | null => {
+  let j: Record<string, unknown>
+  try {
+    j = JSON.parse(out ?? '') as Record<string, unknown>
+  } catch {
+    return null
+  }
+  if (!j || typeof j !== 'object') return null
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+  const obj = (v: unknown) => (v && typeof v === 'object' ? (v as Record<string, unknown>) : {})
+  const disk = obj(j.disk)
+  const freeB = num(disk.free)
+  const totalB = num(disk.total)
+  const mem = obj(j.mem)
+  const memTotal = num(mem.total)
+  const memFree = num(mem.free)
+  const bytes = obj(j.bytes)
+  const rx = num(bytes.rx)
+  const tx = num(bytes.tx)
+  const cpu = num(j.cpu)
+  const sessions = num(j.sessions)
+  const ports = Array.isArray(j.ports) ? j.ports : typeof j.ports === 'number' ? [j.ports] : null
+  return {
+    disk: totalB && freeB !== null ? { freeGB: freeB / GB, totalGB: totalB / GB, pct: Math.round((1 - freeB / totalB) * 100) } : null,
+    mem:
+      memTotal && memFree !== null
+        ? { usedGB: (memTotal - memFree) / GB, totalGB: memTotal / GB, pct: Math.round(((memTotal - memFree) / memTotal) * 100) }
+        : null,
+    cpuPct: cpu === null ? null : Math.round(cpu),
+    sessions,
+    ports: ports === null ? null : ports.map(Number).filter(p => p > 0).sort((a, b) => a - b),
+    isOnline: typeof j.online === 'boolean' ? j.online : null,
+    pingMs: num(j.pingMs) ?? 0,
+    bytes: rx !== null && tx !== null ? { rx, tx } : null,
+  }
+}
+
+type Run = (argv: string[], timeoutMs?: number) => Promise<{ exitCode: number; stdout: string } | null>
+
+const readMac = async (run: Run): Promise<Raw> => {
+  const out = (r: { stdout: string } | null) => r?.stdout ?? null
+  const [disk, vm, mem, top, ps, lsof, route] = await Promise.all([
+    run(['df', '-k', '/System/Volumes/Data']),
+    run(['vm_stat']),
+    run(['sysctl', '-n', 'hw.memsize']),
+    run(['top', '-l', '2', '-n', '0', '-s', '1']),
+    run(['ps', '-axo', 'comm=']),
+    run(['lsof', '-nP', '-iTCP', '-sTCP:LISTEN']),
+    run(['route', '-n', 'get', 'default']),
+  ])
+  const iface = /interface:\s+(\S+)/.exec(route?.stdout ?? '')?.[1]
+  const [ping, bytes] = await Promise.all([
+    run(['ping', '-c', '1', '-W', '1500', '1.1.1.1']),
+    iface ? run(['netstat', '-ib', '-I', iface]) : Promise.resolve(null),
+  ])
+  return {
+    disk: parseDisk(out(disk)),
+    mem: parseMem(out(vm), Number(out(mem)?.trim())),
+    cpuPct: parseCpu(out(top)),
+    sessions: parseSessions(out(ps)),
+    ports: parsePorts(out(lsof)),
+    isOnline: ping ? ping.exitCode === 0 : null,
+    pingMs: Number(/time=([\d.]+) ms/.exec(ping?.stdout ?? '')?.[1] ?? 0),
+    bytes: parseBytes(out(bytes)),
+  }
+}
+
+const readWindows = async (run: Run, script: string): Promise<Raw> => {
+  const r = await run(['powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script], 20_000)
+  return (
+    parseWindows(r?.stdout ?? null) ?? {
+      disk: null,
+      mem: null,
+      cpuPct: null,
+      sessions: null,
+      ports: null,
+      isOnline: null,
+      pingMs: 0,
+      bytes: null,
+    }
+  )
 }
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     let isBusy = false
     let prev: { rx: number; tx: number; at: number } | null = null
+    const isWindows = (await $.env.get('OS')) === 'Windows_NT' || /^[A-Za-z]:[\\/]/.test($.plugin.root)
+    const script = `${$.plugin.root}/scripts/stats-windows.ps1`
+
+    // A command that cannot start or overruns is null: its cell reads "unknown", the rest still show.
+    const run: Run = (argv, timeoutMs = 8000) => $.process.run(argv, { timeoutMs }).catch(() => null)
 
     const refresh = async () => {
       if (isBusy) return
       isBusy = true
       try {
-        const run = (argv: string[]) => $.process.run(argv, { timeoutMs: 8000 })
-        const [disk, vm, mem, top, ps, lsof] = await Promise.all([
-          run(['df', '-k', '/System/Volumes/Data']),
-          run(['vm_stat']),
-          run(['sysctl', '-n', 'hw.memsize']),
-          run(['top', '-l', '2', '-n', '0', '-s', '1']),
-          run(['ps', '-axo', 'comm=']),
-          run(['lsof', '-nP', '-iTCP', '-sTCP:LISTEN']),
-        ])
-        const route = await run(['route', '-n', 'get', 'default'])
-        const iface = /interface:\s+(\S+)/.exec(route.stdout)?.[1]
-        const [ping, bytes] = await Promise.all([
-          run(['ping', '-c', '1', '-W', '1500', '1.1.1.1']),
-          iface ? run(['netstat', '-ib', '-I', iface]) : Promise.resolve(null),
-        ])
+        const raw = isWindows ? await readWindows(run, script) : await readMac(run)
         const at = await $.clock.now()
-        const cur = bytes ? parseBytes(bytes.stdout) : null
-        let downBps = 0
-        let upBps = 0
+        const cur = raw.bytes
+        let downBps: number | null = cur ? 0 : null
+        let upBps: number | null = cur ? 0 : null
         if (cur && prev && at > prev.at) {
           const sec = (at - prev.at) / 1000
           downBps = Math.max(0, (cur.rx - prev.rx) / sec)
           upBps = Math.max(0, (cur.tx - prev.tx) / sec)
         }
         if (cur) prev = { ...cur, at }
-        const d = parseDisk(disk.stdout)
-        if (!d) return
         const reading: Stats = {
-          ...d,
-          ...parseMem(vm.stdout, Number(mem.stdout.trim())),
-          cpuPct: parseCpu(top.stdout),
-          sessions: parseSessions(ps.stdout),
-          ports: parsePorts(lsof.stdout),
-          isOnline: ping.exitCode === 0,
-          pingMs: Number(/time=([\d.]+) ms/.exec(ping.stdout)?.[1] ?? 0),
+          disk: raw.disk,
+          mem: raw.mem,
+          cpuPct: raw.cpuPct,
+          sessions: raw.sessions,
+          ports: raw.ports,
+          isOnline: raw.isOnline,
+          pingMs: raw.pingMs,
           downBps,
           upBps,
         }
@@ -148,7 +226,9 @@ export const register: Register = on => {
       const filled = Math.max(0, Math.min(BAR, Math.round((pct / 100) * BAR)))
       return '█'.repeat(filled) + '░'.repeat(BAR - filled)
     }
-    const diskColor = s.freeGB < 20 ? 'red' : s.freeGB < 50 ? 'yellow' : 'green'
+    const empty = '░'.repeat(BAR)
+    const diskColor = !s.disk ? undefined : s.disk.freeGB < 20 ? 'red' : s.disk.freeGB < 50 ? 'yellow' : 'green'
+    const count = (n: number | null) => (n === null ? t('unknown') : `${n}${t('unit')}`)
 
     return (
       <Box flexDirection="column" paddingX={1}>
@@ -156,29 +236,37 @@ export const register: Register = on => {
           <Box gap={1}>
             <Text>⛁</Text>
             <Text dimColor>{t('disk')}</Text>
-            <Text color={diskColor}>{bar(s.diskPct)}</Text>
-            <Text dimColor>{s.diskPct}% · {s.freeGB.toFixed(0)}GB {t('free')}</Text>
+            {s.disk ? <Text color={diskColor}>{bar(s.disk.pct)}</Text> : <Text dimColor>{empty}</Text>}
+            <Text dimColor>
+              {s.disk ? `${s.disk.pct}% · ${s.disk.freeGB.toFixed(0)}GB ${t('free')}` : t('unknown')}
+            </Text>
           </Box>
           <Box gap={1}>
             <Text>▦</Text>
             <Text dimColor>{t('mem')}</Text>
-            <Text color={color(s.memPct)}>{bar(s.memPct)}</Text>
-            <Text dimColor>{s.memPct}% · {s.memUsedGB.toFixed(1)}/{s.memTotalGB.toFixed(0)}GB</Text>
+            {s.mem ? <Text color={color(s.mem.pct)}>{bar(s.mem.pct)}</Text> : <Text dimColor>{empty}</Text>}
+            <Text dimColor>
+              {s.mem ? `${s.mem.pct}% · ${s.mem.usedGB.toFixed(1)}/${s.mem.totalGB.toFixed(0)}GB` : t('unknown')}
+            </Text>
           </Box>
           <Box gap={1}>
             <Text>{'⚙\uFE0E'}</Text>
             <Text dimColor>CPU</Text>
-            <Text color={color(s.cpuPct)}>{bar(s.cpuPct)}</Text>
-            <Text dimColor>{s.cpuPct}%</Text>
+            {s.cpuPct === null ? <Text dimColor>{empty}</Text> : <Text color={color(s.cpuPct)}>{bar(s.cpuPct)}</Text>}
+            <Text dimColor>{s.cpuPct === null ? t('unknown') : `${s.cpuPct}%`}</Text>
           </Box>
         </Box>
         <Box gap={5}>
           <Box gap={1}>
-            <Text color={s.isOnline ? 'green' : 'red'}>●</Text>
+            {s.isOnline === null ? <Text dimColor>●</Text> : <Text color={s.isOnline ? 'green' : 'red'}>●</Text>}
             <Text dimColor>
-              {s.isOnline ? `${t('net')} ${Math.round(s.pingMs)}ms` : `${t('net')} ${t('offline')}`}
+              {s.isOnline === null
+                ? `${t('net')} ${t('unknown')}`
+                : s.isOnline
+                  ? `${t('net')} ${Math.round(s.pingMs)}ms`
+                  : `${t('net')} ${t('offline')}`}
             </Text>
-            {isSpeedHidden ? null : (
+            {isSpeedHidden || s.downBps === null || s.upBps === null ? null : (
               <Text dimColor>
                 ↓{rate(s.downBps)} ↑{rate(s.upBps)}
               </Text>
@@ -192,13 +280,13 @@ export const register: Register = on => {
           <Box gap={1}>
             <Text>◈</Text>
             <Text dimColor>
-              {t('sessions')} {s.sessions}{t('unit')}
+              {t('sessions')} {count(s.sessions)}
             </Text>
           </Box>
           <Box gap={1}>
             <Text>⬡</Text>
             <Text dimColor>
-              {t('servers')} {s.ports.length}{t('unit')}
+              {t('servers')} {count(s.ports === null ? null : s.ports.length)}
             </Text>
             <Button
               key="ports"
@@ -225,7 +313,7 @@ export const register: Register = on => {
         ) : null}
         {isPortsOpen ? (
           <Text dimColor>
-            {'  '}{t('show')}: {s.ports.length ? s.ports.join('  ') : '-'}
+            {'  '}{t('show')}: {s.ports === null ? t('unknown') : s.ports.length ? s.ports.join('  ') : '-'}
           </Text>
         ) : null}
       </Box>

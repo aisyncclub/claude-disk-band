@@ -1,5 +1,13 @@
 {
   "name": "aisyncclub",
-  "owner": { "name": "AI 싱크클럽" },
-  "plugins": [{ "name": "disk-band", "source": "./" }]
+  "owner": {
+    "name": "AI 싱크클럽"
+  },
+  "description": "AI 싱크클럽이 만든 Claude 모드 (disk-band: 입력창 위 상태 띠, 맥·윈도우)",
+  "plugins": [
+    {
+      "name": "disk-band",
+      "source": "./"
+    }
+  ]
 }
