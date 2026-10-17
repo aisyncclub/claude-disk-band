@@ -1,0 +1,8 @@
+{
+  "name": "disk-band",
+  "version": "0.3.0",
+  "description": "Claude 입력창 위에 디스크·메모리·CPU·인터넷·로컬 세션·로컬 서버를 보여주는 상태 띠 (한/영 전환)",
+  "author": { "name": "AI 싱크클럽", "url": "https://aisyncclub.com/about" },
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}
