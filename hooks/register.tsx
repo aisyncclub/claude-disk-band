@@ -114,6 +114,13 @@ export const parseWindows = (out: string | null): Raw | null => {
   }
 }
 
+// What the plugins beneath answer when none of them draws: nothing, or a Box with nothing in it.
+const isEmpty = (tree: unknown) => {
+  if (!tree || typeof tree !== 'object') return true
+  const { type, children } = tree as { type?: unknown; children?: unknown }
+  return type === 'Box' && (!Array.isArray(children) || children.length === 0)
+}
+
 type Run = (argv: string[], timeoutMs?: number) => Promise<{ exitCode: number; stdout: string } | null>
 
 const readMac = async (run: Run): Promise<Raw> => {
@@ -214,6 +221,10 @@ export const register: Register = on => {
     const s = await read($, stats)
     if (e.props.hasSurvey || s === null) return next(e)
 
+    // Another mod may draw in this same place (a row of buttons, say). Ask what the
+    // plugins beneath drew and keep it under this band, so neither hides the other.
+    const below = await next(e).catch(() => null)
+
     const isSpeedHidden = (await $.store.get('disk-band.speedHidden')) === true
     const isAboutOpen = (await $.store.get('disk-band.about')) === true
     const isPortsOpen = (await $.store.get('disk-band.ports')) === true
@@ -230,7 +241,7 @@ export const register: Register = on => {
     const diskColor = !s.disk ? undefined : s.disk.freeGB < 20 ? 'red' : s.disk.freeGB < 50 ? 'yellow' : 'green'
     const count = (n: number | null) => (n === null ? t('unknown') : `${n}${t('unit')}`)
 
-    return (
+    const band = (
       <Box flexDirection="column" paddingX={1}>
         <Box gap={5}>
           <Box gap={1}>
@@ -316,6 +327,13 @@ export const register: Register = on => {
             {'  '}{t('show')}: {s.ports === null ? t('unknown') : s.ports.length ? s.ports.join('  ') : '-'}
           </Text>
         ) : null}
+      </Box>
+    )
+
+    return isEmpty(below) ? band : (
+      <Box flexDirection="column">
+        {band}
+        {below}
       </Box>
     )
   })
