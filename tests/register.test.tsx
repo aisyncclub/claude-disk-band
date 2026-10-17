@@ -228,3 +228,43 @@ describe('on macOS', () => {
     expect(all).toContain('64GB free')
   })
 })
+
+describe('beside another mod in the same place', () => {
+  test('keeps the band another mod drew beneath it', async ($, on) => {
+    mock.env(on, {})
+    mock.store(on)
+    const clock = mock.clock(on)
+    answer(on, mac())
+    // a mod beneath that draws a row of buttons there, as a quick-asks style mod does
+    on('ui.render', { component: 'AbovePrompt' }, async ($, e) => {
+      const { Box, Button } = $.ui.resolve(e)
+      return (
+        <Box>
+          <Button key="today" label="할 일 정리" onPress={() => undefined} />
+        </Box>
+      )
+    })
+    await start($, on, clock)
+    for (const surface of SURFACES) {
+      const ui = await $.ui.mount({ ...BAND, surface })
+      expect(await ui.find({ type: 'Button', key: 'today' })).toBeDefined()
+      expect((await ui.findAll({ type: 'Text' })).map(t => t.text).join(' | ')).toContain('93% · 64GB 남음')
+    }
+  })
+
+  test('before the first reading it leaves the place to the mod beneath', async ($, on) => {
+    mock.env(on, {})
+    mock.store(on)
+    on('ui.render', { component: 'AbovePrompt' }, async ($, e) => {
+      const { Box, Button } = $.ui.resolve(e)
+      return (
+        <Box>
+          <Button key="today" label="할 일 정리" onPress={() => undefined} />
+        </Box>
+      )
+    })
+    const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+    expect(await ui.find({ type: 'Button', key: 'today' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /디스크/ })).toBeUndefined()
+  })
+})

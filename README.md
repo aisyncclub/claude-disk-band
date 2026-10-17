@@ -45,15 +45,33 @@
 
 ## 빠른 시작
 
-Claude Code 터미널 세션에서 한 줄:
+### Claude 데스크톱 앱 (맥·윈도우)
+
+입력창에 차례로 넣습니다. 앱의 `/plugin`은 앱 자체 화면이라 터미널식 한 줄(`--marketplace`)은 "플러그인을 찾을 수 없습니다"로 끝납니다.
+
+1. `/plugin marketplace add aisyncclub/claude-disk-band` 를 보내고, 뜬 화면에서 **동기화**
+2. `/plugin install disk-band@aisyncclub` 를 보내고, 범위는 **이 컴퓨터의 모든 프로젝트** 를 골라 설치
+3. **새 대화**를 열고 아무 메시지나 하나 보냅니다. 띠는 메시지를 보내 세션이 시작된 뒤에 뜹니다
+
+Claude 에게 한 줄로 부탁해도 됩니다. 방법을 같이 적어야 바로 설치합니다("모드 설치해 줘"만 쓰면 저장소를 이리저리 살펴보다 멈출 수 있습니다).
 
 ```
-/plugin install disk-band --marketplace aisyncclub/claude-disk-band
+claude plugin 명령으로 aisyncclub/claude-disk-band 의 disk-band 모드를 설치해 줘
 ```
 
-`Add marketplace?`에 `y`를 누르고 범위를 고르면 끝입니다. 이후 시작하는 세션부터 띠가 뜹니다.
+Claude 가 저장소를 먼저 읽어 보고 `claude plugin marketplace add aisyncclub/claude-disk-band`, `claude plugin install disk-band@aisyncclub` 를 실행합니다. 명령마다 허용을 물으면 허용하고, 끝나면 새 대화를 엽니다.
 
-### 데스크톱 앱에서 쓰기 / 폴더로 직접 쓰기
+### Claude Code 터미널
+
+한 줄이면 됩니다(옛 버전에서 `--marketplace` 를 모른다고 나오면 `claude update` 먼저).
+
+```
+claude plugin install disk-band --marketplace aisyncclub/claude-disk-band
+```
+
+세션 안에서는 `/plugin install disk-band --marketplace aisyncclub/claude-disk-band` 를 보내고 `Add marketplace?`에 `y`, 범위를 고르면 됩니다. 이후 시작하는 세션부터 띠가 뜹니다.
+
+### 폴더로 직접 쓰기
 
 맥:
 
@@ -130,6 +148,11 @@ Claude의 모드(플러그인) 기능으로 입력창 위 자리(`AbovePrompt`)�
 - 모드를 지원하는 Claude Code (터미널 또는 데스크톱 앱)
 
 ## 자주 묻는 질문
+
+**설치했는데 띠가 안 떠요.** 세 가지를 보세요.
+- 새 대화를 열고 메시지를 하나 보냈는지. 앱은 첫 메시지를 보내야 세션이 시작됩니다.
+- 입력창 위 같은 자리를 쓰는 다른 모드가 있는지. 0.4.1부터 disk-band 는 아래 모드가 그린 것을 자기 띠 밑에 같이 그립니다. 하지만 다른 모드가 disk-band 보다 위에 있으면서 자기 것만 그리고 끝내면(`ui.render` 훅에서 `next(e)`를 부르지 않으면) disk-band 가 가려집니다. 그 모드 훅에서 `const below = await next(e)` 로 아래 것을 받아 자기 띠와 같이 돌려주게 고치거나, 잠시 꺼 보세요(`/plugin` 목록에서 끄기).
+- `/plugin` 목록에서 disk-band 가 켜져 있는지.
 
 **윈도우에서도 되나요?** 됩니다(0.4.0부터). 설치 방법은 맥과 같습니다. 처음 값이 뜨기까지 몇 초 걸릴 수 있습니다.
 
