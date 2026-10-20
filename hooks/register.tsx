@@ -10,9 +10,14 @@ const REFRESH_MS = 15_000
 const BAR = 5
 const ABOUT_URL = 'https://aisyncclub.com/about'
 const GB = 1024 * 1024 * 1024
+// Band widths (cells): full labels from WIDE, short cells from COMPACT, one row below.
+const WIDE = 110
+const COMPACT = 64
+
 const DEV = /^(node|bun|deno|python|ruby|php|vite|next|esbuild|remotion)/
 
 type Lang = 'ko' | 'en'
+type Layout = 'full' | 'compact' | 'mini'
 const TEXT = {
   disk: { ko: '디스크', en: 'Disk' },
   free: { ko: '남음', en: 'free' },
@@ -241,81 +246,143 @@ export const register: Register = on => {
     const diskColor = !s.disk ? undefined : s.disk.freeGB < 20 ? 'red' : s.disk.freeGB < 50 ? 'yellow' : 'green'
     const count = (n: number | null) => (n === null ? t('unknown') : `${n}${t('unit')}`)
 
+    // Fit the band to the room it has: a narrow column would wrap each cell onto
+    // rows of its own, so drop the labels first, then fold everything into one row.
+    const cols = e.props.bodyColumns ?? e.viewport?.columns ?? WIDE
+    const layout: Layout = cols >= WIDE ? 'full' : cols >= COMPACT ? 'compact' : 'mini'
+    const isFull = layout === 'full'
+    const gap = isFull ? 5 : 2
+    const cut = isFull ? undefined : ('truncate-end' as const)
+
+    const speedButton = (
+      <Button
+        key="speed"
+        label={isSpeedHidden ? '▾' : '▴'}
+        onPress={() => $.store.set('disk-band.speedHidden', !isSpeedHidden)}
+      />
+    )
+    const portsButton = (
+      <Button
+        key="ports"
+        label={isPortsOpen ? '▴' : '▾'}
+        onPress={() => $.store.set('disk-band.ports', !isPortsOpen)}
+      />
+    )
+    const langButton = (
+      <Button
+        key="lang"
+        label={lang === 'ko' ? '한→EN' : 'EN→한'}
+        onPress={() => $.store.set('disk-band.lang', lang === 'ko' ? 'en' : 'ko')}
+      />
+    )
+    const aboutButton = (
+      <Button key="about" label="About" onPress={() => $.store.set('disk-band.about', !isAboutOpen)} />
+    )
+    const pctText = (pct: number | null, c?: string) =>
+      pct === null ? <Text dimColor>?</Text> : <Text color={c}>{`${pct}%`}</Text>
+    const netColor = s.isOnline === null ? undefined : s.isOnline ? 'green' : 'red'
+    const netShort = s.isOnline === null ? '?' : s.isOnline ? `${Math.round(s.pingMs)}ms` : t('offline')
+    const speed =
+      isSpeedHidden || s.downBps === null || s.upBps === null ? null : (
+        <Text dimColor wrap={cut}>
+          ↓{rate(s.downBps)} ↑{rate(s.upBps)}
+        </Text>
+      )
+
+    const rows =
+      layout === 'mini' ? (
+        <Box gap={2}>
+          <Box gap={0}>
+            <Text>⛁</Text>
+            {pctText(s.disk ? s.disk.pct : null, diskColor)}
+          </Box>
+          <Box gap={0}>
+            <Text>▦</Text>
+            {pctText(s.mem ? s.mem.pct : null, s.mem ? color(s.mem.pct) : undefined)}
+          </Box>
+          <Box gap={0}>
+            <Text>{'⚙\uFE0E'}</Text>
+            {pctText(s.cpuPct, s.cpuPct === null ? undefined : color(s.cpuPct))}
+          </Box>
+          <Box gap={0}>
+            <Text color={netColor} dimColor={netColor === undefined}>●</Text>
+            <Text dimColor>{netShort}</Text>
+          </Box>
+          <Text dimColor>◈{s.sessions === null ? '?' : s.sessions}</Text>
+          <Box gap={0}>
+            <Text dimColor>⬡{s.ports === null ? '?' : s.ports.length}</Text>
+            {portsButton}
+          </Box>
+        </Box>
+      ) : (
+        <Box flexDirection="column">
+          <Box gap={gap}>
+            <Box gap={1}>
+              <Text>⛁</Text>
+              {isFull ? <Text dimColor>{t('disk')}</Text> : null}
+              {s.disk ? <Text color={diskColor}>{bar(s.disk.pct)}</Text> : <Text dimColor>{empty}</Text>}
+              <Text dimColor wrap={cut}>
+                {s.disk
+                  ? isFull
+                    ? `${s.disk.pct}% · ${s.disk.freeGB.toFixed(0)}GB ${t('free')}`
+                    : `${s.disk.pct}% ${s.disk.freeGB.toFixed(0)}GB`
+                  : t('unknown')}
+              </Text>
+            </Box>
+            <Box gap={1}>
+              <Text>▦</Text>
+              {isFull ? <Text dimColor>{t('mem')}</Text> : null}
+              {s.mem ? <Text color={color(s.mem.pct)}>{bar(s.mem.pct)}</Text> : <Text dimColor>{empty}</Text>}
+              <Text dimColor wrap={cut}>
+                {s.mem
+                  ? isFull
+                    ? `${s.mem.pct}% · ${s.mem.usedGB.toFixed(1)}/${s.mem.totalGB.toFixed(0)}GB`
+                    : `${s.mem.pct}%`
+                  : t('unknown')}
+              </Text>
+            </Box>
+            <Box gap={1}>
+              <Text>{'⚙\uFE0E'}</Text>
+              {isFull ? <Text dimColor>CPU</Text> : null}
+              {s.cpuPct === null ? <Text dimColor>{empty}</Text> : <Text color={color(s.cpuPct)}>{bar(s.cpuPct)}</Text>}
+              <Text dimColor>{s.cpuPct === null ? t('unknown') : `${s.cpuPct}%`}</Text>
+            </Box>
+          </Box>
+          <Box gap={gap}>
+            <Box gap={1}>
+              {s.isOnline === null ? <Text dimColor>●</Text> : <Text color={netColor}>●</Text>}
+              <Text dimColor wrap={cut}>
+                {isFull
+                  ? s.isOnline === null
+                    ? `${t('net')} ${t('unknown')}`
+                    : s.isOnline
+                      ? `${t('net')} ${Math.round(s.pingMs)}ms`
+                      : `${t('net')} ${t('offline')}`
+                  : netShort}
+              </Text>
+              {speed}
+              {speedButton}
+            </Box>
+            <Box gap={1}>
+              <Text>◈</Text>
+              <Text dimColor>{isFull ? `${t('sessions')} ${count(s.sessions)}` : count(s.sessions)}</Text>
+            </Box>
+            <Box gap={1}>
+              <Text>⬡</Text>
+              <Text dimColor>
+                {isFull ? `${t('servers')} ${count(s.ports === null ? null : s.ports.length)}` : count(s.ports === null ? null : s.ports.length)}
+              </Text>
+              {portsButton}
+            </Box>
+            {langButton}
+            {aboutButton}
+          </Box>
+        </Box>
+      )
+
     const band = (
       <Box flexDirection="column" paddingX={1}>
-        <Box gap={5}>
-          <Box gap={1}>
-            <Text>⛁</Text>
-            <Text dimColor>{t('disk')}</Text>
-            {s.disk ? <Text color={diskColor}>{bar(s.disk.pct)}</Text> : <Text dimColor>{empty}</Text>}
-            <Text dimColor>
-              {s.disk ? `${s.disk.pct}% · ${s.disk.freeGB.toFixed(0)}GB ${t('free')}` : t('unknown')}
-            </Text>
-          </Box>
-          <Box gap={1}>
-            <Text>▦</Text>
-            <Text dimColor>{t('mem')}</Text>
-            {s.mem ? <Text color={color(s.mem.pct)}>{bar(s.mem.pct)}</Text> : <Text dimColor>{empty}</Text>}
-            <Text dimColor>
-              {s.mem ? `${s.mem.pct}% · ${s.mem.usedGB.toFixed(1)}/${s.mem.totalGB.toFixed(0)}GB` : t('unknown')}
-            </Text>
-          </Box>
-          <Box gap={1}>
-            <Text>{'⚙\uFE0E'}</Text>
-            <Text dimColor>CPU</Text>
-            {s.cpuPct === null ? <Text dimColor>{empty}</Text> : <Text color={color(s.cpuPct)}>{bar(s.cpuPct)}</Text>}
-            <Text dimColor>{s.cpuPct === null ? t('unknown') : `${s.cpuPct}%`}</Text>
-          </Box>
-        </Box>
-        <Box gap={5}>
-          <Box gap={1}>
-            {s.isOnline === null ? <Text dimColor>●</Text> : <Text color={s.isOnline ? 'green' : 'red'}>●</Text>}
-            <Text dimColor>
-              {s.isOnline === null
-                ? `${t('net')} ${t('unknown')}`
-                : s.isOnline
-                  ? `${t('net')} ${Math.round(s.pingMs)}ms`
-                  : `${t('net')} ${t('offline')}`}
-            </Text>
-            {isSpeedHidden || s.downBps === null || s.upBps === null ? null : (
-              <Text dimColor>
-                ↓{rate(s.downBps)} ↑{rate(s.upBps)}
-              </Text>
-            )}
-            <Button
-              key="speed"
-              label={isSpeedHidden ? '▾' : '▴'}
-              onPress={() => $.store.set('disk-band.speedHidden', !isSpeedHidden)}
-            />
-          </Box>
-          <Box gap={1}>
-            <Text>◈</Text>
-            <Text dimColor>
-              {t('sessions')} {count(s.sessions)}
-            </Text>
-          </Box>
-          <Box gap={1}>
-            <Text>⬡</Text>
-            <Text dimColor>
-              {t('servers')} {count(s.ports === null ? null : s.ports.length)}
-            </Text>
-            <Button
-              key="ports"
-              label={isPortsOpen ? '▴' : '▾'}
-              onPress={() => $.store.set('disk-band.ports', !isPortsOpen)}
-            />
-          </Box>
-          <Button
-            key="lang"
-            label={lang === 'ko' ? '한→EN' : 'EN→한'}
-            onPress={() => $.store.set('disk-band.lang', lang === 'ko' ? 'en' : 'ko')}
-          />
-          <Button
-            key="about"
-            label="About"
-            onPress={() => $.store.set('disk-band.about', !isAboutOpen)}
-          />
-        </Box>
+        {rows}
         {isAboutOpen ? (
           <Box gap={1}>
             <Text dimColor>{'  '}{t('about')}</Text>
@@ -323,7 +390,7 @@ export const register: Register = on => {
           </Box>
         ) : null}
         {isPortsOpen ? (
-          <Text dimColor>
+          <Text dimColor wrap={cut}>
             {'  '}{t('show')}: {s.ports === null ? t('unknown') : s.ports.length ? s.ports.join('  ') : '-'}
           </Text>
         ) : null}
