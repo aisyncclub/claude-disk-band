@@ -268,3 +268,39 @@ describe('beside another mod in the same place', () => {
     expect(await ui.find({ type: 'Text', text: /디스크/ })).toBeUndefined()
   })
 })
+
+describe('in a narrow column', () => {
+  const at = async ($: Engine, bodyColumns: number) => {
+    const ui = await $.ui.mount({ ...BAND, props: { ...BAND.props, bodyColumns }, surface: 'terminal' })
+    const all = (await ui.findAll({ type: 'Text' })).map(t => t.text).join(' | ')
+    return { ui, all }
+  }
+
+  test('from 64 to 109 cells it drops the labels but keeps two rows of values', async ($, on) => {
+    mock.env(on, {})
+    mock.store(on)
+    const clock = mock.clock(on)
+    answer(on, mac())
+    await start($, on, clock)
+    const { all } = await at($, 80)
+    expect(all).not.toContain('디스크')
+    expect(all).not.toContain('로컬 세션')
+    expect(all).toContain('93% 64GB')
+    expect(all).toContain('5ms')
+    expect(all).toContain('2개')
+  })
+
+  test('under 64 cells it folds into one short row', async ($, on) => {
+    mock.env(on, {})
+    mock.store(on)
+    const clock = mock.clock(on)
+    answer(on, mac())
+    await start($, on, clock)
+    const { ui, all } = await at($, 50)
+    expect(all).toContain('93%')
+    expect(all).toContain('◈2')
+    expect(all).toContain('⬡2')
+    expect(all).not.toContain('█')
+    expect(await ui.findAll({ type: 'Button' })).toHaveLength(1)
+  })
+})
